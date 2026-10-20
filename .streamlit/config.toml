@@ -1,0 +1,10 @@
+[theme]
+base = "dark"
+primaryColor = "#9100FF"
+backgroundColor = "#181618"
+secondaryBackgroundColor = "#34015B"
+textColor = "#FFFFFF"
+font = "monospace"
+
+[server]
+headless = true

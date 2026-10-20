@@ -46,3 +46,14 @@ It computes local gas Reynolds number from `mdot*D/(A*mu)` and a laminar / Haala
 - `sample_system.json`: example UI configuration
 
 Run `pytest -q` for numerical tests, and `streamlit run app.py` to inspect UI.
+
+
+## PURPL interface revision (October 20, 2026)
+
+- Official brand colors used: Dusk `#181618`, Stardust `#9100FF`, Moon `#FFFFFF`, and Old Gold `#DBC885`; titles use Chakra Petch and other text uses Roboto Mono loaded using Google Fonts (fallback when offline).
+- The fluid/boundary numeric fields use persistent Streamlit keys and do **not** pass a re-initializing `value=` on each rerun, preventing stale-value feedback on plus/minus controls.
+- Stage count is adjustable from 1 through 12. Each stage has editable orifice and pipe geometry, friction roughness, and Cd; liquid mode additionally has FL and cavitation-onset sliders.
+- The serial pipe and orifice schematic is rendered as scalable SVG and updated when geometry changes. It is illustrative rather than a CAD drawing.
+- Existing `solver.py` numerical calculation is unchanged by this UI revision.
+- To deploy: commit all project files to GitHub, then on Streamlit Community Cloud select `app.py` as the entrypoint. `requirements.txt` is at the repository root.
+- Validation: `python -m compileall -q app.py solver.py` and `python -m pytest -q` (13 tests). Solver and extracted UI state/diagram functions were tested. Browser-level Streamlit automation was **not** possible in the packaging environment because Streamlit was unavailable and package downloads were blocked. After deployment, visually test numeric +/- fields, stage count and import/export flows.
