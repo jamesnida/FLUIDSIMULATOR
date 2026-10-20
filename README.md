@@ -57,3 +57,25 @@ Run `pytest -q` for numerical tests, and `streamlit run app.py` to inspect UI.
 - Existing `solver.py` numerical calculation is unchanged by this UI revision.
 - To deploy: commit all project files to GitHub, then on Streamlit Community Cloud select `app.py` as the entrypoint. `requirements.txt` is at the repository root.
 - Validation: `python -m compileall -q app.py solver.py` and `python -m pytest -q` (13 tests). Solver and extracted UI state/diagram functions were tested. Browser-level Streamlit automation was **not** possible in the packaging environment because Streamlit was unavailable and package downloads were blocked. After deployment, visually test numeric +/- fields, stage count and import/export flows.
+
+## v3 — Unit systems, diagnostics, and exports
+
+The `Unit system` dropdown at the top of the Streamlit sidebar changes all editable physical-property fields, boundary conditions, stage geometry, schematic dimensions, chart pressures, result table pressures, and flow-rate readout between:
+
+- **SI:** kPa absolute, K, mm, m, mm roughness, kg/m³, mPa·s, J/(kg·K), kg/s.
+- **US customary:** psia, °F, in, ft, in roughness, lbm/ft³, cP, ft·lbf/(lbm·°R), lbm/s.
+
+The solver continues to use the original `Config` and `Stage` canonical units defined by `solver.py`; the UI's `units.py` performs all conversions. Imported configuration JSON remains canonical to preserve compatibility with v2. Results JSON exports canonical values; the downloadable CSV uses selected display units.
+
+**Fanno diagnostics:** `fanno_capacity` is the Darcy friction parameter F(M_in); `fanno_used` = f_D L/D; `fanno_remaining` = F(M_out). Utilization is `used/capacity`, and the pipe choking indicator is set when the pipe exit is at Mach 1 under the imposed-backpressure approximation. A large pressure drop alone is not proof of choking. On very long pipes utilization can approach 100% while the outlet Mach remains subsonic because F(M_in) becomes extremely large at low inlet Mach numbers.
+
+**Important physics limitations:** This is a serial screening model, not a fully coupled multichoke gas-flow model. The nozzle/orifice pressure-recovery approximation and stage static/stagnation state coupling are not experimentally validated. The boundary-pressure floor used when a pipe would become sonic is approximate and cannot resolve complex shocks, boundary-pressure-dependent expansions, or multiple simultaneously choked elements. Verify critical engineering predictions independently before relying on them.
+
+### v4 — Selectable stage results
+
+The **Results display · Column checkboxes** panel appears after running the solver.
+Use the per-output checkboxes to choose the visible table columns, or **Select all** / **Clear all** to toggle outputs for the current fluid regime. The selection persists through reruns and unit-system changes. The CSV export includes exactly the visible columns in the active unit system. The raw JSON export always contains the full set of engineering results, regardless of visibility selections.
+
+### Updating an existing Community Cloud installation
+
+Replace the project files in your existing GitHub repository (including `app.py`) and commit to `main`. Community Cloud will redeploy automatically.

@@ -88,7 +88,10 @@ def pipe_reverse(mdot, p_requested, s, c):
     # For constant T0, mass flux implies p proportional to 1/(M sqrt(1+aM²)).
     p_in=G/(mach_in*sqrt(g/(R*t0))*sqrt(1+(g-1)*mach_in**2/2))
     return {'p_in':p_in,'p_out':p_exit,'mach_in':mach_in,'mach_out':mach_out,
-            'fanno_capacity':fanno_f(mach_in,g),'fanno_used':loss,'pipe_choked':choke,
+            'fanno_capacity':fanno_f(mach_in,g),'fanno_used':loss,
+            'fanno_utilization':loss/fanno_f(mach_in,g) if loss>0 else 0.0,
+            'fanno_remaining':fanno_f(mach_out,g),
+            'pipe_choked':choke,
             're':re,'friction':f,'pipe_dp':p_in-p_exit,
             'p0_in':p_in*p0_over_p(mach_in,g),'p0_out':p_exit*p0_over_p(mach_out,g)}
 
@@ -199,6 +202,8 @@ def solve(c,stages):
             if key in r: r[key+'_psia_or_psi']=r[key]/PSI
     alerts=[]
     for r in rows:
+        if c.fluid=='Gas' and r['fanno_utilization']>=0.9 and not r['pipe_choked']:
+            alerts.append(f"Stage {r['stage']}: Fanno length utilization {100*r['fanno_utilization']:.1f}% (exit Mach {r['mach_out']:.4f}); substantial pressure drop does not imply sonic choking.")
         if r['pipe_choked']: alerts.append(f"Stage {r['stage']}: Fanno sonic limit at pipe outlet (Mach 1). Downstream pressure cannot influence upstream through that segment under this approximation.")
         if r['orifice_choked']: alerts.append(f"Stage {r['stage']}: orifice sonic/cavitation flow limitation.")
     if c.fluid=='Gas':

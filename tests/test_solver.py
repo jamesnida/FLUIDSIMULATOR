@@ -60,3 +60,23 @@ def test_reject_invalid():
 def test_choked_exit_pressure_floor():
     r=solve(Config(),[Stage()])
     assert r['nodes_psia'][-1]>=r['specified_backpressure_psia']
+
+
+def test_kilometer_pipe_not_choked_by_pressure_drop_alone():
+    """Large pressure drop can exist with subsonic pipe exit: sonic criterion is M=1."""
+    c=Config()
+    r=solve(c,[Stage(pipe_l_m=1000.)])
+    pipe=r['stages'][0]
+    assert pipe['pipe_dp']>0.7*c.inlet_psia*6894.757293168
+    assert pipe['mach_out']<1.0
+    assert not pipe['pipe_choked']
+    assert 0 <= pipe['fanno_utilization'] < 1
+    assert pipe['fanno_remaining']>0
+    assert pipe['fanno_capacity']==pytest.approx(pipe['fanno_used']+pipe['fanno_remaining'],rel=1e-8)
+
+
+def test_detect_real_sonic_exit_at_low_backpressure():
+    r=pipe_reverse(0.02,1000.,Stage(pipe_l_m=1000),Config())
+    assert r['pipe_choked'] is True
+    assert r['mach_out']==pytest.approx(1)
+    assert r['fanno_remaining']==pytest.approx(0,abs=1e-10)

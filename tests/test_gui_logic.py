@@ -1,3 +1,4 @@
+import pytest
 """Test Streamlit-independent UI model and schematic functions by AST extraction.
 Streamlit itself is tested on deployment once dependencies are installed.
 """
@@ -9,6 +10,7 @@ from types import SimpleNamespace
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from solver import Config, Stage, validate, solve
+from units import *
 
 APP=Path(__file__).resolve().parents[1]/'app.py'
 source=ast.parse(APP.read_text(encoding='utf-8'))
@@ -21,12 +23,15 @@ class State(dict):
 
 
 def ui():
-    code=compile(ast.Module(body=[functions[name] for name in ('setup_state','resize_stages','configuration','import_system','system_svg')],type_ignores=[]),str(APP),'exec')
+    code=compile(ast.Module(body=[functions[name] for name in ('setup_state','resize_stages','configuration','import_system','system_svg','change_units')],type_ignores=[]),str(APP),'exec')
     s=State()
     ns={'st':SimpleNamespace(session_state=s),'Config':Config,'Stage':Stage,
         'FIELDS':tuple(asdict(Config())), 'STAGE_FIELDS':tuple(asdict(Stage())),
         'asdict':asdict,'validate':validate,'DUSK':'#181618','STARDUST':'#9100FF',
-        'MOON':'#FFFFFF','GOLD':'#DBC885'}
+        'MOON':'#FFFFFF','GOLD':'#DBC885', 'convert_config':convert_config,
+        'convert_stage':convert_stage,'read_config':read_config,'read_stage':read_stage,
+        'to_display':to_display,'to_canonical':to_canonical, 'CONFIG_KINDS':CONFIG_KINDS,
+        'STAGE_KINDS':STAGE_KINDS,'unit':unit}
     exec(code,ns)
     return ns,s
 
@@ -79,3 +84,92 @@ def test_a_range_of_stage_counts_and_both_fluids():
             result=solve(c,stages)
             assert result['mass_flow_kg_s']>=0
             assert len(result['stages'])==n
+
+
+def test_unit_switch_preserves_physics_and_edits():
+    u,s=ui();u['setup_state']()
+    before=u['configuration']()
+    s['_previous_unit_system']='SI'
+    s['unit_system']='US customary'
+    u['change_units']()
+    after=u['configuration']()
+    assert after[0].inlet_psia==pytest.approx(before[0].inlet_psia)
+    assert after[0].temperature_k==pytest.approx(before[0].temperature_k)
+    assert after[1][0].pipe_l_m==pytest.approx(before[1][0].pipe_l_m)
+    assert s['stage_0_orifice_d_mm']==pytest.approx(.5)
+    s['stage_0_pipe_l_m']=3280.839895013123
+    assert u['configuration']()[1][0].pipe_l_m==pytest.approx(1000.)
+    s['unit_system']='SI';u['change_units']()
+    assert s['stage_0_pipe_l_m']==pytest.approx(1000.)
+
+
+def test_display_table_has_units_and_dimensionless_metrics():
+    r=solve(Config(),[Stage()])
+    for sys in SYSTEMS:
+        label=labeled_rows(r['stages'],'Gas',sys)[0]
+        assert any(k.startswith('Inlet static pressure (') for k in label)
+        assert 'Fanno utilization (%)' in label
+        assert 'Pipe sonic (Mach 1)' in label
+
+
+def test_units_roundtrip_every_dimension():
+    for kind in UNITS['SI']:
+        for v in (0.2,2.3,102.4):
+            back=to_canonical(to_display(v,kind,'US customary'),kind,'US customary')
+            assert back==pytest.approx(v,rel=1e-9,abs=1e-9)
+
+
+def test_incompressible_display_has_units():
+    r=solve(Config(fluid='Liquid'),[Stage()])
+    data=labeled_rows(r['stages'],'Liquid','US customary')[0]
+    assert 'Pipe ΔP (psi)' in data
+    assert 'Cavitation onset screening' in data
+
+
+def selection_helpers():
+    names=['results_columns','selected_results','update_results_selection']
+    code=compile(ast.Module(body=[functions[name] for name in names],type_ignores=[]),str(APP),'exec')
+    state=State()
+    ns={'unit':unit,'RESULT_FIELDS':{
+     'all':(('stage','Stage',True),('inlet','Inlet static pressure',True),('outlet','Outlet static pressure',True),('orifice_dp','Orifice pressure drop',True),('pipe_dp','Pipe pressure drop',True),('re','Reynolds number',False),('friction','Darcy friction factor',False)),
+     'Gas':(('mach_in','Pipe inlet Mach',True),('mach_out','Pipe outlet Mach',True),('capacity','Fanno capacity',False),('consumed','Fanno consumed',False),('remaining','Fanno remaining',False),('utilization','Fanno utilization',True),('pipe_sonic','Pipe sonic',True),('orifice_sonic','Orifice sonic candidate',True)),
+     'Liquid':(('cavitation_limit','Orifice cavitation limit',True),('cavitation_onset','Cavitation onset screening',True))},
+     'st':SimpleNamespace(session_state=state)}
+    exec(code,ns)
+    return ns,state
+
+
+def test_column_selection_for_both_fluids_and_both_units():
+    ns,_=selection_helpers()
+    for fluid in ('Gas','Liquid'):
+        result=solve(Config(fluid=fluid),[Stage(),Stage()])
+        for sys in SYSTEMS:
+            full=labeled_rows(result['stages'],fluid,sys)
+            mapping=ns['results_columns'](fluid,sys)
+            assert list(mapping.values())==list(full[0])
+            chosen={'stage':True,'inlet':True,'pipe_dp':True}
+            shown=ns['selected_results'](full,fluid,sys,chosen)
+            assert len(shown)==2
+            assert list(shown[0])==[mapping[x] for x in chosen]
+            assert shown[0][mapping['inlet']]==full[0][mapping['inlet']]
+
+
+def test_checkbox_selection_persists_and_bulk_actions_affect_current_fluid_only():
+    ns,ss=selection_helpers()
+    ns['update_results_selection']('Gas',True)
+    assert ss['result_show_pipe_sonic'] is True
+    assert ss['result_show_stage'] is True
+    ss['result_show_mach_out']=False
+    ns['update_results_selection']('Liquid',False)
+    assert ss['result_show_mach_out'] is False
+    assert ss['result_show_cavitation_onset'] is False
+    assert ss['result_show_pipe_sonic'] is True
+    ns['update_results_selection']('Gas',False)
+    assert ss['result_show_pipe_sonic'] is False
+
+
+def test_no_selection_gives_empty_row_dicts():
+    ns,_=selection_helpers()
+    result=solve(Config(),[Stage()])
+    row=labeled_rows(result['stages'],'Gas','SI')
+    assert ns['selected_results'](row,'Gas','SI',{})==[{}]
